@@ -1,52 +1,52 @@
 const express = require('express');
 const axios = require('axios');
-const cors = require('cors');
 const { exec } = require('child_process');
 
 const app = express();
 const port = 3001;
 
-app.use(cors());
 app.use(express.json());
-// Servir archivos estáticos (como index.html) directamente en la raíz /
-app.use(express.static(__dirname)); 
+app.use(express.static(__dirname));
 
-// Configuración de Nigiri (Regtest por defecto)
-const NIGIRI_RPC_URL = 'http://localhost:18443';
-const NIGIRI_AUTH = 'admin1:1234'; // Credenciales por defecto de Nigiri/Bitcoin regtest
+// Configuración RPC directa al nodo Bitcoin de Nigiri
+const RPC_URL = 'http://localhost:18443';
+const RPC_AUTH = { username: 'admin1', password: '123' };
 
-// Helper para ejecutar comandos de sistema (Nigiri CLI vía WSL en Ubuntu)
+// Helper RPC directo via HTTP (sin pasar por WSL)
+const rpc = async (method, params = []) => {
+    const res = await axios.post(RPC_URL, { jsonrpc: '1.0', method, params }, { auth: RPC_AUTH });
+    return res.data.result;
+};
+
+// Helper para comandos Nigiri CLI que no son RPC puro (faucet, etc.)
 const runNigiri = (cmd) => {
-    // Forzamos la ejecución específicamente en la distro 'Ubuntu'
     const commandBody = cmd.startsWith('nigiri ') ? cmd.substring(7) : cmd;
     const wslCmd = `wsl -d Ubuntu /usr/local/bin/nigiri ${commandBody}`;
-
     return new Promise((resolve, reject) => {
         exec(wslCmd, (error, stdout, stderr) => {
             if (error) {
                 console.error(`Error ejecutando: ${wslCmd}`, stderr || error.message);
                 reject(stderr || error.message);
-            }
-            else resolve(stdout.trim());
+            } else resolve(stdout.trim());
         });
     });
 };
 
-// 1. Obtener Info General (Mempool y Bloques)
+// 1. Info General (Mempool y Bloques)
 app.get('/api/info', async (req, res) => {
     try {
-        const mempool = await runNigiri('nigiri rpc getmempoolinfo');
-        const blockchain = await runNigiri('nigiri rpc getblockchaininfo');
-        res.json({ 
-            mempool: JSON.parse(mempool), 
-            blockchain: JSON.parse(blockchain) 
-        });
+        const [mempool, blockchain] = await Promise.all([
+            rpc('getmempoolinfo'),
+            rpc('getblockchaininfo'),
+        ]);
+        res.json({ mempool, blockchain });
     } catch (err) {
-        res.status(500).json({ error: err });
+        console.error('/api/info error:', err.message);
+        res.status(500).json({ error: err.message });
     }
 });
 
-// 2. Faucet: Recibir 1 BTC de prueba
+// 2. Faucet: Recibir BTC de prueba
 app.post('/api/faucet', async (req, res) => {
     const { address } = req.body;
     if (!address) return res.status(400).json({ error: 'Address required' });
@@ -58,48 +58,50 @@ app.post('/api/faucet', async (req, res) => {
     }
 });
 
-// 3. Minar: Generar 1 bloque para confirmar transacciones
+// 3. Minar: Generar 1 bloque
 app.post('/api/mine', async (req, res) => {
     try {
-        // Obtenemos una dirección propia para recibir la recompensa del minado
-        const address = await runNigiri('nigiri rpc getnewaddress "" "bech32"');
-        // Comando corregido: usamos 'rpc' directamente en lugar de 'bitcoin-cli'
-        const result = await runNigiri(`nigiri rpc generatetoaddress 1 "${address}"`);
-        res.json({ message: 'Block mined', blockHash: result });
+        const address = await rpc('getnewaddress', ['', 'bech32']);
+        const hashes = await rpc('generatetoaddress', [1, address]);
+        res.json({ message: 'Block mined', blockHash: hashes[0] });
     } catch (err) {
-        res.status(500).json({ error: err });
+        console.error('/api/mine error:', err.message);
+        res.status(500).json({ error: err.message });
     }
 });
 
 // 4. Crear Dirección nueva
 app.get('/api/new-address', async (req, res) => {
     try {
-        const address = await runNigiri('nigiri rpc getnewaddress "" "bech32"');
+        const address = await rpc('getnewaddress', ['', 'bech32']);
         res.json({ address });
     } catch (err) {
-        res.status(500).json({ error: err });
+        console.error('/api/new-address error:', err.message);
+        res.status(500).json({ error: err.message });
     }
 });
 
-// 5. Consultar saldo del wallet activo
+// 5. Saldo del wallet activo
 app.get('/api/balance', async (req, res) => {
     try {
-        const balance = await runNigiri('nigiri rpc getbalance');
-        res.json({ balance: parseFloat(balance) });
+        const balance = await rpc('getbalance');
+        res.json({ balance });
     } catch (err) {
-        res.status(500).json({ error: err });
+        console.error('/api/balance error:', err.message);
+        res.status(500).json({ error: err.message });
     }
 });
 
-// 6. Consultar saldo de una dirección específica (scantxoutset)
+// 6. Saldo de dirección específica (scantxoutset)
 app.post('/api/scan-address', async (req, res) => {
     const { address } = req.body;
     if (!address) return res.status(400).json({ error: 'Address required' });
     try {
-        const result = await runNigiri(`nigiri rpc scantxoutset "start" '["addr(${address})"]'`);
-        res.json(JSON.parse(result));
+        const result = await rpc('scantxoutset', ['start', [`addr(${address})`]]);
+        res.json(result);
     } catch (err) {
-        res.status(500).json({ error: err });
+        console.error('/api/scan-address error:', err.message);
+        res.status(500).json({ error: err.message });
     }
 });
 
@@ -108,10 +110,11 @@ app.post('/api/send', async (req, res) => {
     const { address, amount } = req.body;
     if (!address || !amount) return res.status(400).json({ error: 'Address and amount required' });
     try {
-        const txid = await runNigiri(`nigiri rpc sendtoaddress "${address}" ${amount}`);
+        const txid = await rpc('sendtoaddress', [address, amount]);
         res.json({ txid });
     } catch (err) {
-        res.status(500).json({ error: err });
+        console.error('/api/send error:', err.message);
+        res.status(500).json({ error: err.message });
     }
 });
 
@@ -121,34 +124,32 @@ app.post('/api/raw-tx', async (req, res) => {
     if (!address || !amount) return res.status(400).json({ error: 'Address and amount required' });
     try {
         const steps = {};
-        // Paso 1: Crear transacción RAW
-        const rawHex = await runNigiri(`nigiri rpc createrawtransaction "[]" '{"${address}":${amount}}'`);
+        const rawHex = await rpc('createrawtransaction', [[], { [address]: amount }]);
         steps.createraw = rawHex;
-        // Paso 2: Fondear (seleccionar UTXOs)
-        const fundedRaw = await runNigiri(`nigiri rpc fundrawtransaction "${rawHex}"`);
-        const funded = JSON.parse(fundedRaw);
+        const funded = await rpc('fundrawtransaction', [rawHex]);
         steps.funded = funded.hex;
-        // Paso 3: Firmar
-        const signedRaw = await runNigiri(`nigiri rpc signrawtransactionwithwallet "${funded.hex}"`);
-        const signed = JSON.parse(signedRaw);
+        const signed = await rpc('signrawtransactionwithwallet', [funded.hex]);
         steps.signed = signed.hex;
-        // Paso 4: Enviar
-        const txid = await runNigiri(`nigiri rpc sendrawtransaction "${signed.hex}"`);
+        const txid = await rpc('sendrawtransaction', [signed.hex]);
         steps.txid = txid;
         res.json({ steps, txid });
     } catch (err) {
-        res.status(500).json({ error: err });
+        console.error('/api/raw-tx error:', err.message);
+        res.status(500).json({ error: err.message });
     }
 });
 
-// 9. Inspeccionar mempool detallada
+// 9. Mempool detallada
 app.get('/api/mempool', async (req, res) => {
     try {
-        const info = await runNigiri('nigiri rpc getmempoolinfo');
-        const rawpool = await runNigiri('nigiri rpc getrawmempool');
-        res.json({ info: JSON.parse(info), txids: JSON.parse(rawpool) });
+        const [info, txids] = await Promise.all([
+            rpc('getmempoolinfo'),
+            rpc('getrawmempool'),
+        ]);
+        res.json({ info, txids });
     } catch (err) {
-        res.status(500).json({ error: err });
+        console.error('/api/mempool error:', err.message);
+        res.status(500).json({ error: err.message });
     }
 });
 
@@ -157,10 +158,11 @@ app.post('/api/block-info', async (req, res) => {
     const { blockHash } = req.body;
     if (!blockHash) return res.status(400).json({ error: 'Block hash required' });
     try {
-        const block = await runNigiri(`nigiri rpc getblock "${blockHash}" 2`);
-        res.json(JSON.parse(block));
+        const block = await rpc('getblock', [blockHash, 2]);
+        res.json(block);
     } catch (err) {
-        res.status(500).json({ error: err });
+        console.error('/api/block-info error:', err.message);
+        res.status(500).json({ error: err.message });
     }
 });
 
