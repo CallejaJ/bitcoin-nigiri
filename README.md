@@ -1,6 +1,6 @@
 # Nigiri
 
-<div align="center">
+<div align="left">
 	 <img src="https://img.shields.io/badge/Bitcoin-Regtest-F7931A?style=for-the-badge&logo=bitcoin" alt="Bitcoin" />
 	 <img src="https://img.shields.io/badge/Liquid-Sidechain-00AEEF?style=for-the-badge" alt="Liquid" />
 	 <img src="https://img.shields.io/badge/Electrs-RPC%2FREST-1F2937?style=for-the-badge" alt="Electrs" />
