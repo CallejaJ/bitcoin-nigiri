@@ -164,6 +164,14 @@ Las pruebas se centran en escenarios de integración local ejecutados con CLI y 
    nigiri start --liquid
    ```
 
+## Dashboard
+
+Local Bitcoin regtest dashboard with a Commodore 64 theme. Includes mempool stats, faucet, mining, raw transactions, and address scanning.
+
+![Nigiri Lab - Main view](ngrok1.png)
+
+![Nigiri Lab - Send & Mempool](ngrok2.png)
+
 ---
 
 Built for Bitcoin and Liquid local development workflows. / Construido para flujos de desarrollo local con Bitcoin y Liquid.
