@@ -9,7 +9,7 @@
 	 <img src="https://img.shields.io/badge/CLI-Nigiri-059669?style=for-the-badge" alt="CLI" />
 </div>
 
-<p align="center">
+<p align="left">
     <i>Nigiri provisions a local Bitcoin regtest stack with optional Liquid services and explorer tooling for API and integration testing. / Nigiri aprovisiona un entorno local de Bitcoin regtest con servicios opcionales de Liquid y herramientas de exploración para pruebas de API e integración.</i>
 </p>
 
