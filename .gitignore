@@ -1,0 +1,17 @@
+# Electrum wallet source
+Electrum-4.6.2/
+
+# Course PDF
+*.pdf
+
+# Task files
+tarea*.md
+tareas.md
+
+# Node.js
+dashboard/node_modules/
+node_modules/
+
+# Environment
+.env.local
+.env
